@@ -194,6 +194,8 @@ int heading_diff(int initial, int finalv) {
 }
 
 void handle_cornerpegging(){
+  // idea for future from web: calculate where the world thinks you are by extrapolating from your last position/speed (dead reckoning), then compare that to your current position. When the error is big enough, transmit. 
+
   int heading_change_since_last_beacon = tabs_i(heading_diff(heading_at_last_beacon, heading_now));
 
   unsigned long now = millis();
