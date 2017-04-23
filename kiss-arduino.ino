@@ -1,69 +1,9 @@
-/*
- * Hardware setup
- * 2x Arduino Pro Mini 5V
- * 1x NEO-6M GY-GPS6MV1 GPS APM2.5 (or anything else that outputs TTL level NMEA 0183 sentences)
- * 
- * First Arduino flashed with mobilinkd firmware - this is the TNC
- * Second Arduino flashed with this sketch - this is the GPS host
- * 
- * GPS Arduino pin 3  -> GPS board TX pin
- * GPS Arduino pin 10 -> TNC Arduino TXO
- * GPS Arduino pin 11 -> TNC Arduino RXI
- * 
- * TX audio:
- * TNC arduino pin 6 -> middle of a 100k variable resistor
- * One side of resistor -> ground
- * Other side of resistor -> 100nF / 0.1uF capacitor
- * Other side of that capacitor -> Baofeng/Kenwood/Wouxun headset cable red wire / 3.5mm jack ring
- * Headset cable blue wire / 2.5mm jack sleeve -> circuit ground
- * 
- * PTT:
- * TNC arduino pin 10 -> 1k resistor
- * Other side of resistor -> BC547B base (middle pin)
- * Transistor collector (right hand pin, looking at flat face) ->  circuit ground
- * Transistor emittor (left hand pin) -> Headset cable bare wire / 3.5mm jack sleeve
- * 
- * All GND tied together
- * All VCC tied together
- */
-
 #include <SoftwareSerial.h>
 
 SoftwareSerial kissSerial(10, 11); // RX, TX
 SoftwareSerial gpsSerial(3, 4); // RX, TX
 
-// address field - this is carefully packed, NOT straight ASCII
-/*byte addressField_sample[255] = { 
-  // from m0lte-13 to wide1-1, wide2-1
-  0xAE, 0x92, 0x88, 0x8A, 0x62, 0x40, 0x62,  // to WIDE1-1
-  0x9A, 0x60, 0x98, 0xA8, 0x8A, 0x40, 0x7A,  // from M0LTE
-  0xAE, 0x92, 0x88, 0x8A, 0x64, 0x40, 0x63   // via WIDE2-1 (last)
-};*/
-
 byte addressField[255];
-
-// Example information field - this is just ascii
-/*byte infoField_sample[255] = {
-  // !5126.82N/00101.68W>Arduino testing
-    0x21, 0x35, 0x31, 0x32, 0x36, 0x2E, 0x38, 0x32, 0x4E, 0x2F, 0x30, 0x30, 0x31, 0x30, 0x31, 0x2E, 0x36, 0x38, 0x57, 0x3E, 0x41, 0x72, 0x64, 0x75, 0x69, 0x6E, 0x6F, 0x20, 0x74, 0x65, 0x73, 0x74, 0x69, 0x6E, 0x67
-  //!     5     1     2     6     .     8     2     N     /     0     0     1     0     1     .     6     8     W     >     A     r     d     u     i     n     o     [spc] t     e     s     t     i     n     g
-  //0     1     2     3     4     5     6     7     8     9     10    11    12    13    14    15    16    17    18    19    20    21    22    23    24    25    26    27    28    29    30    31    32    33    34
-};*/
-
-/*
- * Breakdown: 
- * ! = location report without timestamp
- * 51 = degrees - fixed length
- * 26.82 = decimal minutes - fixed length - always two digits + 2 d.p.
- * N = positive latitude
- * / = select primary symbol table - http://www.aprs.org/doc/APRS101.PDF page 104 (Appendix 2)
- * 001 = degrees - fixed length, always three digits
- * 01.68 = decimal minutes - fixed length - always two digits + 2 d.p.
- * W = negative longitude
- * > = select Car from primary symbol table
- * Arduino testing = free text comment
- */
-
 byte infoField[255];
 
 const int DEBUG = 0;
@@ -107,6 +47,17 @@ unsigned long lastTx = 0;
 String fromCall = "M0LTE-13";
 String comment = "Arduino testing";
 
+const int turn_threshold = 30; // degrees
+const int min_turn_time = 15000; // milliseconds
+const int speed_threshold_kph = 10;
+unsigned long last_corner_time;
+
+unsigned long beacon_rate = 60000;
+int heading_at_last_beacon;
+int heading_now;
+float speedkmh_now;
+unsigned long millisSinceLastTx;
+
 char gpsBuf[255];
 int gpsCur=0;
 
@@ -131,24 +82,37 @@ void setup() {
   Serial.println("Started");
 }
 
-unsigned long beacon_rate = 60000;
-int heading_at_last_beacon;
-int heading_now;
-float speedkmh_now;
-unsigned long millisSinceLastTx;
-unsigned long now;
-
 void loop() {
   
-  now = millis();
-
+  unsigned long now = millis();
   millisSinceLastTx = now - lastTx;
 
+  handle_rollover(now);
+  
+  handle_transmit(now);
+
+  handle_tnc_output();
+
+  handle_gps();
+
+  handle_cornerpegging();
+}
+
+void handle_tnc_output(){
+  // read anything back from KISS TNC and output it to the hardware serial port (PC)
+  while (kissSerial.available()){
+    Serial.write(kissSerial.read());
+  }
+}
+
+void handle_rollover(unsigned long now){
   if (millisSinceLastTx > now){
     // rollover has occurred, basically start over
     millisSinceLastTx = 0;
   }
-  
+}
+
+void handle_transmit(unsigned long now){
   // send as soon as possible, and every 60 seconds
   if (fix && (lastTx == 0 || millisSinceLastTx > beacon_rate)){
     
@@ -162,13 +126,13 @@ void loop() {
     
     flash();
     
-    serialWrite(KISS_FEND);
-    serialWrite(KISS_CMD_DATAFRAME0);
-    sendField(addressField);
-    serialWrite(DELIM_1);
-    serialWrite(DELIM_2);
-    sendField(infoField);
-    serialWrite(KISS_FEND);
+    tncWrite(KISS_FEND);
+    tncWrite(KISS_CMD_DATAFRAME0);
+    tncSendField(addressField);
+    tncWrite(DELIM_1);
+    tncWrite(DELIM_2);
+    tncSendField(infoField);
+    tncWrite(KISS_FEND);
 
     Serial.print(fromCall);
     Serial.print(">WIDE1-1 via WIDE2-1: ");
@@ -192,21 +156,16 @@ void loop() {
     heading_at_last_beacon = heading_now;
     lastTx = now;
   }
+}
 
-  // read anything back from KISS TNC and output it to the hardware serial port (PC)
-  while (kissSerial.available()){
-    Serial.write(kissSerial.read());
-  }
-
-  // handle GPS
+void handle_gps(){
   if (gpsSerial.available()) {
     char c = gpsSerial.read();
     if (c == 10) {
       // discard LF
       return;
     } else if (c == 13) {
-      // interpret command
-      interpret();
+      interpretGps();
       clearGpsBuffer();
       gpsCur=0;
     } else {
@@ -215,21 +174,7 @@ void loop() {
       gpsCur++;
     }
   }
-
-  handle_smartbeaconing();
 }
-
-//int speed_now;
-//int low_speed;
-//int slow_rate;
-//int high_speed;
-//int fast_beacon_rate;
-int turn_threshold = 30; // degrees
-//int turn_min;
-//int turn_slope;
-//int heading_change_since_last_beacon;
-//int secs_since_beacon;
-//int turn_time;
 
 int heading_diff(int initial, int finalv) {
   int diff = finalv - initial;
@@ -247,20 +192,17 @@ int heading_diff(int initial, int finalv) {
   }
 }
 
-void handle_smartbeaconing(){
+void handle_cornerpegging(){
+  int heading_change_since_last_beacon = tabs_i(heading_diff(heading_at_last_beacon, heading_now));
+
+  unsigned long now = millis();
+  unsigned long time_since_last_corner = now - last_corner_time;
   
-    
-    int heading_change_since_last_beacon = tabs_i(heading_diff(heading_at_last_beacon, heading_now));
-
-    unsigned long time_since
-    
-    if (heading_change_since_last_beacon > turn_threshold && millisSinceLastTx > turn_time) {
-      secs_since_beacon = beacon_rate;
-    }
-  //}
+  if (speedkmh_now > speed_threshold_kph && heading_change_since_last_beacon > turn_threshold && time_since_last_corner > min_turn_time) {
+    millisSinceLastTx = beacon_rate;
+    last_corner_time = now;
+  }
 }
-
-unsigned long last_corner_time;
 
 void setTxDelay(int ms){
   // doesn't work
@@ -363,11 +305,6 @@ void setCallsign(byte callsignField[], String callsignAndSsid, bool isLastCall) 
   bitWrite(ssidByte,2,bitRead(ssid,1));
   bitWrite(ssidByte,1,bitRead(ssid,0));
   bitWrite(ssidByte,0,isLastCall);
-
-  //for (int i=0; i<6; i++){
-    //callsignField[i] = callBytes[i];
-  //}
-  //callsignField[6] = ssidByte;
   
   callsignField[0] = callBytes[0];
   callsignField[1] = callBytes[1];
@@ -498,35 +435,7 @@ void setComment(String &comment){
   }
 }
 
-void setPath(){
-  setPath2();
-}
-
-void setPath1() {
-  // hard coded version - to WIDE1-1, via WIDE2-1 (only)
-  
-  addressField[0] = 0xAE;
-  addressField[1] = 0x92;
-  addressField[2] = 0x88;
-  addressField[3] = 0x8A;
-  addressField[4] = 0x62;
-  addressField[5] = 0x40;
-  addressField[6] = 0x62;
-
-  addressField[14] = 0xAE;
-  addressField[15] = 0x92;
-  addressField[16] = 0x88;
-  addressField[17] = 0x8A;
-  addressField[18] = 0x64;
-  addressField[19] = 0x40;
-  addressField[20] = 0x63;
-  
-  //0xAE, 0x92, 0x88, 0x8A, 0x62, 0x40, 0x62,  // to WIDE1-1
-  //0x9A, 0x60, 0x98, 0xA8, 0x8A, 0x40, 0x7A,  // from M0LTE
-  //0xAE, 0x92, 0x88, 0x8A, 0x64, 0x40, 0x63   // via WIDE2-1 (last)
-}
-
-void setPath2() {
+void setPath() {
   
   byte firstAddressField[7];
   byte thirdAddressField[7];
@@ -536,9 +445,6 @@ void setPath2() {
     thirdAddressField[i]=0;
   }
   
-  /*setCallsign(&addressField[0*7], "WIDE1-1", false);
-  setCallsign(&addressField[2*7], "WIDE2-1", true);*/
-
   setCallsign(firstAddressField, "WIDE1-1", false);
   setCallsign(thirdAddressField, "WIDE2-1", true);
 
@@ -551,7 +457,7 @@ void setPath2() {
   }
 }
 
-void interpret() {
+void interpretGps() {
   String str(gpsBuf);
   if (!str.startsWith("$GPRMC,")){
     return;
@@ -572,7 +478,6 @@ void interpret() {
   String latMin = lat.substring(2,lat.length()); // e.g. 21.23302
   latDec = latDeg.toFloat() + latMin.toFloat() / 60.0;
 
-  //Serial.println(str);
   String lon = getCommaSeparatedField(str, 5); // e.g. 00201.31654
   String lonDeg = lon.substring(0,3);
   String lonMin = lon.substring(3,lon.length());
@@ -598,20 +503,9 @@ void interpret() {
   speedkmh_now = speedKts.toFloat() * 1.852;
   heading_now = trackDegS.toInt();
 
-  /*Serial.print("***interpret*** ");
-  Serial.print(latDec,6);
-  Serial.print(", ");
-  Serial.print(lonDec,6);
-  Serial.print(" @ ");
-  Serial.print(speedkmh,1);
-  Serial.print("km/h ");
-  if (speedkmh > 3) {
-    Serial.print(trackDeg);
-  }
-  Serial.println();*/
 }
 
-void serialWrite(byte b) {
+void tncWrite(byte b) {
 
   kissSerial.write(b);
   
@@ -621,7 +515,7 @@ void serialWrite(byte b) {
   }
 }
 
-void sendField(byte field[]) {
+void tncSendField(byte field[]) {
   for(int i = 0; i < 255; i++){
     if (field[i] == 0x00){
       break;
@@ -645,3 +539,64 @@ void flash(){
   delay(50);                       
   digitalWrite(LED_BUILTIN, LOW);  
 }
+
+
+// sample address field - this is carefully packed, NOT straight ASCII
+/*byte addressField_sample[255] = { 
+  // from m0lte-13 to wide1-1, wide2-1
+  0xAE, 0x92, 0x88, 0x8A, 0x62, 0x40, 0x62,  // to WIDE1-1
+  0x9A, 0x60, 0x98, 0xA8, 0x8A, 0x40, 0x7A,  // from M0LTE
+  0xAE, 0x92, 0x88, 0x8A, 0x64, 0x40, 0x63   // via WIDE2-1 (last)
+};*/
+
+// Example information field - this is just ascii
+/*byte infoField_sample[255] = {
+  // !5126.82N/00101.68W>Arduino testing
+    0x21, 0x35, 0x31, 0x32, 0x36, 0x2E, 0x38, 0x32, 0x4E, 0x2F, 0x30, 0x30, 0x31, 0x30, 0x31, 0x2E, 0x36, 0x38, 0x57, 0x3E, 0x41, 0x72, 0x64, 0x75, 0x69, 0x6E, 0x6F, 0x20, 0x74, 0x65, 0x73, 0x74, 0x69, 0x6E, 0x67
+  //!     5     1     2     6     .     8     2     N     /     0     0     1     0     1     .     6     8     W     >     A     r     d     u     i     n     o     [spc] t     e     s     t     i     n     g
+  //0     1     2     3     4     5     6     7     8     9     10    11    12    13    14    15    16    17    18    19    20    21    22    23    24    25    26    27    28    29    30    31    32    33    34
+};*/
+
+/*
+ * Breakdown: 
+ * ! = location report without timestamp
+ * 51 = degrees - fixed length
+ * 26.82 = decimal minutes - fixed length - always two digits + 2 d.p.
+ * N = positive latitude
+ * / = select primary symbol table - http://www.aprs.org/doc/APRS101.PDF page 104 (Appendix 2)
+ * 001 = degrees - fixed length, always three digits
+ * 01.68 = decimal minutes - fixed length - always two digits + 2 d.p.
+ * W = negative longitude
+ * > = select Car from primary symbol table
+ * Arduino testing = free text comment
+ */
+
+
+/*
+ * Hardware setup
+ * 2x Arduino Pro Mini 5V
+ * 1x NEO-6M GY-GPS6MV1 GPS APM2.5 (or anything else that outputs TTL level NMEA 0183 sentences)
+ * 
+ * First Arduino flashed with mobilinkd firmware - this is the TNC
+ * Second Arduino flashed with this sketch - this is the GPS host
+ * 
+ * GPS Arduino pin 3  -> GPS board TX pin
+ * GPS Arduino pin 10 -> TNC Arduino TXO
+ * GPS Arduino pin 11 -> TNC Arduino RXI
+ * 
+ * TX audio:
+ * TNC arduino pin 6 -> middle of a 100k variable resistor
+ * One side of resistor -> ground
+ * Other side of resistor -> 100nF / 0.1uF capacitor
+ * Other side of that capacitor -> Baofeng/Kenwood/Wouxun headset cable red wire / 3.5mm jack ring
+ * Headset cable blue wire / 2.5mm jack sleeve -> circuit ground
+ * 
+ * PTT:
+ * TNC arduino pin 10 -> 1k resistor
+ * Other side of resistor -> BC547B base (middle pin)
+ * Transistor collector (right hand pin, looking at flat face) ->  circuit ground
+ * Transistor emittor (left hand pin) -> Headset cable bare wire / 3.5mm jack sleeve
+ * 
+ * All GND tied together
+ * All VCC tied together
+ */
