@@ -6,7 +6,7 @@ SoftwareSerial gpsSerial(3, 4); // RX, TX
 byte addressField[255];
 byte infoField[255];
 
-const int DEBUG = 0;
+const int DEBUG = 1;
 const byte DELIM_1 = 0x03;
 const byte DELIM_2 = 0xF0;
 const byte KISS_FEND = 0xc0;
@@ -48,7 +48,8 @@ String fromCall = "M0LTE-13";
 String comment = "Arduino testing";
 
 const int turn_threshold = 30; // degrees
-const int min_turn_time = 15000; // milliseconds
+const int min_time_between_cornerpegs = 15000; // milliseconds
+const int min_transmit_interval = 15000; // min time between beacons
 const int speed_threshold_kph = 10;
 unsigned long last_corner_time;
 
@@ -114,7 +115,7 @@ void handle_rollover(unsigned long now){
 
 void handle_transmit(unsigned long now){
   // send as soon as possible, and every 60 seconds
-  if (fix && (lastTx == 0 || millisSinceLastTx > beacon_rate)){
+  if (fix && millisSinceLastTx > min_transmit_interval && (lastTx == 0 || millisSinceLastTx > beacon_rate)){
     
     setFromCall(fromCall);
     setSymbol(SYM_CAR);
@@ -198,9 +199,39 @@ void handle_cornerpegging(){
   unsigned long now = millis();
   unsigned long time_since_last_corner = now - last_corner_time;
   
-  if (speedkmh_now > speed_threshold_kph && heading_change_since_last_beacon > turn_threshold && time_since_last_corner > min_turn_time) {
-    millisSinceLastTx = beacon_rate;
-    last_corner_time = now;
+  if (heading_change_since_last_beacon > turn_threshold) {
+    if (DEBUG) {
+      Serial.print(F("possible corner - heading_change_since_last_beacon="));
+      Serial.print(heading_change_since_last_beacon);
+      Serial.print(F(" vs turn_threshold="));
+      Serial.println(turn_threshold);
+    }
+    if (speedkmh_now > speed_threshold_kph) {
+      if (time_since_last_corner > min_time_between_cornerpegs) {
+        if (DEBUG) {
+          Serial.print(F("triggered - millisSinceLastTx now "));
+          Serial.print(beacon_rate);
+          Serial.print(F(", last_corner_time="));
+          Serial.println(last_corner_time);
+        }
+        millisSinceLastTx = beacon_rate;
+        last_corner_time = now;
+      } else {
+        if (DEBUG) {
+          Serial.print(F("rejected - too soon since last corner: time_since_last_corner="));
+          Serial.print(time_since_last_corner);
+          Serial.print(F(", min_time_between_cornerpegs="));
+          Serial.println(min_time_between_cornerpegs);
+        }
+      }
+    } else {
+      if (DEBUG) {
+        Serial.print(F("rejected - too slow: speedkmh_now="));
+        Serial.print(speedkmh_now);
+        Serial.print(F(", speed_threshold_kph="));
+        Serial.println(speed_threshold_kph);
+      }
+    }
   }
 }
 
