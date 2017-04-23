@@ -131,19 +131,26 @@ void setup() {
   Serial.println("Started");
 }
 
+unsigned long beacon_rate = 60000;
+int heading_at_last_beacon;
+int heading_now;
+float speedkmh_now;
+unsigned long millisSinceLastTx;
+unsigned long now;
+
 void loop() {
   
-  unsigned long now = millis();
+  now = millis();
 
-  unsigned long res = now - lastTx;
+  millisSinceLastTx = now - lastTx;
 
-  if (lastTx > now){
+  if (millisSinceLastTx > now){
     // rollover has occurred, basically start over
-    lastTx = 0;
+    millisSinceLastTx = 0;
   }
   
   // send as soon as possible, and every 60 seconds
-  if (fix && (lastTx == 0 || res > 60000)){
+  if (fix && (lastTx == 0 || millisSinceLastTx > beacon_rate)){
     
     setFromCall(fromCall);
     setSymbol(SYM_CAR);
@@ -151,7 +158,7 @@ void loop() {
     setLat(latDec);
     setLon(lonDec);
     setPath();
-    setAprsMessageType();   
+    setAprsMessageType();
     
     flash();
     
@@ -181,7 +188,8 @@ void loop() {
     if (DEBUG) {
       Serial.print("\n");
     }
-    
+
+    heading_at_last_beacon = heading_now;
     lastTx = now;
   }
 
@@ -207,7 +215,52 @@ void loop() {
       gpsCur++;
     }
   }
+
+  handle_smartbeaconing();
 }
+
+//int speed_now;
+//int low_speed;
+//int slow_rate;
+//int high_speed;
+//int fast_beacon_rate;
+int turn_threshold = 30; // degrees
+//int turn_min;
+//int turn_slope;
+//int heading_change_since_last_beacon;
+//int secs_since_beacon;
+//int turn_time;
+
+int heading_diff(int initial, int finalv) {
+  int diff = finalv - initial;
+  int absDiff = tabs_i(diff);
+  if (absDiff <= 180){
+    if (absDiff == 180) {
+      return absDiff;
+    } else {
+      return diff;
+    }
+  } else if (finalv > initial) {
+    return absDiff - 360;
+  } else {
+    return 360 - absDiff;
+  }
+}
+
+void handle_smartbeaconing(){
+  
+    
+    int heading_change_since_last_beacon = tabs_i(heading_diff(heading_at_last_beacon, heading_now));
+
+    unsigned long time_since
+    
+    if (heading_change_since_last_beacon > turn_threshold && millisSinceLastTx > turn_time) {
+      secs_since_beacon = beacon_rate;
+    }
+  //}
+}
+
+unsigned long last_corner_time;
 
 void setTxDelay(int ms){
   // doesn't work
@@ -332,7 +385,15 @@ void setAprsMessageType(){
 // this is necessary because SoftwareSerial undefs a load of stuff, including abs() which we need.
 // seems simplest to provide our own.
 // "tabs" == "tom's abs"
-float tabs(float in) {
+float tabs_f(float in) {
+  if (in >= 0) {
+    return in;
+  }else{
+    return -in;
+  }
+}
+
+int tabs_i(int in) {
   if (in >= 0) {
     return in;
   }else{
@@ -350,7 +411,7 @@ void setLat(float lat) {
        string ew = lat > 0 ? "N" : "S";
        string result = $"{degStr}{fracStr}{ew}";
    */
-  float absLat = tabs(lat);
+  float absLat = tabs_f(lat);
   int absLatDeg = (int)absLat;
   
   char degBytes[2];
@@ -391,7 +452,7 @@ void setLon(float lon) {
        string ew = lon < 0 ? "W" : "E";
        string result = $"{degStr}{fracStr}{ew}";
    */
-  float absLon = tabs(lon);
+  float absLon = tabs_f(lon);
   int absLonDeg = (int)absLon;
   
   char degBytes[3];
@@ -534,8 +595,8 @@ void interpret() {
   String trackDegS = getCommaSeparatedField(str, 8); // e.g. empty
   //String date = getCommaSeparatedField(str, 9); // e.g. 200417
 
-  float speedkmh = speedKts.toFloat() * 1.852;
-  int trackDeg = trackDegS.toInt();
+  speedkmh_now = speedKts.toFloat() * 1.852;
+  heading_now = trackDegS.toInt();
 
   /*Serial.print("***interpret*** ");
   Serial.print(latDec,6);
