@@ -8,6 +8,7 @@ byte addressField[255];
 byte infoField[255];
 
 const int DEBUG = 1;
+const int HEXDEBUG = 0;
 const byte DELIM_1 = 0x03;
 const byte DELIM_2 = 0xF0;
 const byte KISS_FEND = 0xc0;
@@ -45,6 +46,8 @@ float latDec;
 float lonDec;
 bool fix = false;
 unsigned long lastTx = 0;
+unsigned long dontCornerPegUntil = 0;
+const int rejectedCornerPegDisableWait = 3000; //ms. After not beaconing a suspect corner (e.g. going too slowly), don't check for corners for this many ms.
 String fromCall = "M0LTE-13";
 String comment = "Arduino testing";
 
@@ -115,6 +118,7 @@ void handle_rollover(unsigned long now){
   if (millisSinceLastTx > now){
     // rollover has occurred, basically start over
     millisSinceLastTx = 0;
+    dontCornerPegUntil = 0;
   }
 }
 
@@ -140,8 +144,16 @@ void handle_transmit(unsigned long now){
     tncSendField(infoField);
     tncWrite(KISS_FEND);
 
-    Serial.print(fromCall);
-    Serial.print(">WIDE1-1 via WIDE2-1: ");
+    if (DEBUG) {
+      Serial.print(F("now="));
+      Serial.print(now/1000);
+      Serial.print(F("s millisSinceLastTx="));
+      Serial.print(millisSinceLastTx/1000);
+      Serial.print(F("s "));
+      Serial.print(fromCall);
+      Serial.print(F(">WIDE1-1 via WIDE2-1: "));
+    }
+    
     for (int i=0; i<255;i++){
       if (infoField[i] == 0){
         break;
@@ -153,10 +165,6 @@ void handle_transmit(unsigned long now){
     // clear the field down
     for (int i=0; i<255;i++){
       infoField[i] = 0;
-    }
-  
-    if (DEBUG) {
-      Serial.print("\n");
     }
 
     heading_at_last_beacon = heading_now;
@@ -206,8 +214,10 @@ void handle_cornerpegging(){
   unsigned long now = millis();
   unsigned long time_since_last_corner = now - last_corner_time;
   
-  if (heading_change_since_last_beacon > turn_threshold) {
+  if (now > dontCornerPegUntil && heading_change_since_last_beacon > turn_threshold) {
     if (DEBUG) {
+      Serial.print(now/1000);
+      Serial.print(F("s "));
       Serial.print(F("possible corner - heading_change_since_last_beacon="));
       Serial.print(heading_change_since_last_beacon);
       Serial.print(F(" vs turn_threshold="));
@@ -230,6 +240,7 @@ void handle_cornerpegging(){
           Serial.print(F(", min_time_between_cornerpegs="));
           Serial.println(min_time_between_cornerpegs);
         }
+        dontCornerPegUntil = now + rejectedCornerPegDisableWait;
       }
     } else {
       if (DEBUG) {
@@ -238,6 +249,7 @@ void handle_cornerpegging(){
         Serial.print(F(", speed_threshold_kph="));
         Serial.println(speed_threshold_kph);
       }
+      dontCornerPegUntil = now + rejectedCornerPegDisableWait;
     }
   }
 }
@@ -547,7 +559,7 @@ void tncWrite(byte b) {
 
   kissSerial.write(b);
   
-  if (DEBUG) {
+  if (HEXDEBUG) {
     Serial.print(b, HEX);
     Serial.print(" ");
   }
@@ -561,7 +573,7 @@ void tncSendField(byte field[]) {
     
     kissSerial.write(field[i]);
     
-    if (DEBUG) {
+    if (HEXDEBUG) {
       Serial.print(field[i], HEX);
       Serial.print(" ");
     }
