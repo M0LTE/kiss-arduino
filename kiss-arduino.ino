@@ -1,4 +1,5 @@
 #include <SoftwareSerial.h>
+#include <avr/wdt.h>
 
 SoftwareSerial kissSerial(10, 11); // RX, TX
 SoftwareSerial gpsSerial(3, 4); // RX, TX
@@ -80,10 +81,14 @@ void setup() {
     infoField[i]=0;
   }
 
+  wdt_enable(WDTO_1S);
+  
   Serial.println("Started");
 }
 
 void loop() {
+
+  wdt_reset();
   
   unsigned long now = millis();
   millisSinceLastTx = now - lastTx;
