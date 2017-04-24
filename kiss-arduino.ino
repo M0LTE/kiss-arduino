@@ -222,7 +222,11 @@ void handle_cornerpegging(){
     if (DEBUG) {
       Serial.print(now/1000);
       Serial.print(F("s "));
-      Serial.print(F("possible corner - heading_change_since_last_beacon="));
+      Serial.print(F("possible corner - heading_at_last_beacon="));
+      Serial.print(heading_at_last_beacon);
+      Serial.print(F(" heading_now="));
+      Serial.print(heading_now);
+      Serial.print(F(" heading_change_since_last_beacon="));
       Serial.print(heading_change_since_last_beacon);
       Serial.print(F(" vs turn_threshold="));
       Serial.println(turn_threshold);
