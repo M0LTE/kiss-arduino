@@ -57,7 +57,7 @@ const int min_transmit_interval = 15000; // min time between beacons
 const int speed_threshold_kph = 10;
 unsigned long last_corner_time;
 
-unsigned long beacon_rate = 60000;
+unsigned long beacon_rate = 30000; // ms
 int heading_at_last_beacon;
 int heading_now;
 float speedkmh_now;
@@ -149,7 +149,11 @@ void handle_transmit(unsigned long now){
       Serial.print(now/1000);
       Serial.print(F("s millisSinceLastTx="));
       Serial.print(millisSinceLastTx/1000);
-      Serial.print(F("s "));
+      Serial.print(F("s heading_at_last_beacon="));
+      Serial.print(heading_at_last_beacon);
+      Serial.print(F(" heading_now="));
+      Serial.print(heading_now);
+      Serial.print(F(" "));
       Serial.print(fromCall);
       Serial.print(F(">WIDE1-1 via WIDE2-1: "));
     }
