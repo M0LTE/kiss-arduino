@@ -122,9 +122,21 @@ void handle_rollover(unsigned long now){
   }
 }
 
+bool corner=false;
+
 void handle_transmit(unsigned long now){
   // send as soon as possible, and every 60 seconds
-  if (fix && millisSinceLastTx > min_transmit_interval && (lastTx == 0 || millisSinceLastTx > beacon_rate)){
+  if (fix && millisSinceLastTx > min_transmit_interval && (corner || lastTx == 0 || millisSinceLastTx > beacon_rate)){
+
+    if (DEBUG) {
+      if (corner) {
+        Serial.println("corner");
+      }
+    }
+
+    if (corner) {
+      corner = false;
+    }
     
     setFromCall(fromCall);
     setSymbol(SYM_CAR);
@@ -239,7 +251,8 @@ void handle_cornerpegging(){
           Serial.print(F(", last_corner_time="));
           Serial.println(last_corner_time);
         }
-        millisSinceLastTx = beacon_rate;
+        //millisSinceLastTx = beacon_rate;
+        corner=true;
         last_corner_time = now;
       } else {
         if (DEBUG) {
