@@ -57,7 +57,7 @@ const int min_transmit_interval = 15000; // min time between beacons
 const int speed_threshold_kph = 10;
 unsigned long last_corner_time;
 
-unsigned long beacon_rate = 30000; // ms
+unsigned long beacon_rate = 60000; // ms
 int heading_at_last_beacon;
 int heading_now;
 float speedkmh_now;
