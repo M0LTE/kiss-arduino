@@ -49,7 +49,7 @@ unsigned long lastTx = 0;
 unsigned long dontCornerPegUntil = 0;
 const int rejectedCornerPegDisableWait = 3000; //ms. After not beaconing a suspect corner (e.g. going too slowly), don't check for corners for this many ms.
 String fromCall = "M0LTE-13";
-String comment = "Arduino testing";
+String comment = "tom@m0lte.uk https://twitter.com/tom_m0lte";
 
 const int turn_threshold = 30; // degrees
 const int min_time_between_cornerpegs = 15000; // milliseconds
