@@ -1,8 +1,8 @@
 #include <SoftwareSerial.h>
 #include <avr/wdt.h>
 
-SoftwareSerial kissSerial(10, 11); // RX, TX
-SoftwareSerial gpsSerial(3, 4); // RX, TX
+SoftwareSerial kissSerial(2, 3); // RX, TX
+SoftwareSerial gpsSerial(13, 12); // RX, TX
 
 byte addressField[255];
 byte infoField[255];
