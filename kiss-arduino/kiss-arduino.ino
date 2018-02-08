@@ -1,8 +1,23 @@
 #include <SoftwareSerial.h>
 #include <avr/wdt.h>
 
-SoftwareSerial kissSerial(2, 3); // RX, TX
-SoftwareSerial gpsSerial(13, 12); // RX, TX
+// board size
+// don't use pin 13
+// caps through board
+// passives layout
+// flip GPS
+// LEDs
+
+//#define DEBUG_GPS_ALL
+
+#define GPSTXPIN 11 //not really, it's 13, but we use the LED
+#define GPSRXPIN 12
+
+#define TNCTXPIN 2
+#define TNCRXPIN 3
+
+SoftwareSerial kissSerial(TNCRXPIN, TNCTXPIN);
+SoftwareSerial gpsSerial(GPSRXPIN, GPSTXPIN);
 
 byte addressField[255];
 byte infoField[255];
@@ -48,7 +63,7 @@ bool fix = false;
 unsigned long lastTx = 0;
 unsigned long dontCornerPegUntil = 0;
 const int rejectedCornerPegDisableWait = 3000; //ms. After not beaconing a suspect corner (e.g. going too slowly), don't check for corners for this many ms.
-String fromCall = "M0LTE-13";
+String fromCall = "M0LTE-1";
 String comment = "tom@m0lte.uk https://twitter.com/tom_m0lte";
 
 const int turn_threshold = 30; // degrees
@@ -86,7 +101,7 @@ void setup() {
 
   wdt_enable(WDTO_1S);
   
-  Serial.println("Started");
+  Serial.println("Started, waiting for fix");
 }
 
 void loop() {
@@ -530,6 +545,11 @@ void setPath() {
 
 void interpretGps() {
   String str(gpsBuf);
+  
+  #ifdef DEBUG_GPS_ALL
+  Serial.println(str);
+  #endif
+  
   if (!str.startsWith("$GPRMC,")){
     return;
   }
@@ -538,12 +558,13 @@ void interpretGps() {
   String dataStatus = getCommaSeparatedField(str, 2); // 'A' = valid
 
   if (dataStatus.charAt(0) != 'A'){
+    if (fix) {
+      Serial.println("Fix lost");
+    }
     fix = false;
     return;
   }
-
-  fix = true;
-
+  
   String lat = getCommaSeparatedField(str, 3); // e.g. 4121.23302
   String latDeg = lat.substring(0,2); // e.g. 41
   String latMin = lat.substring(2,lat.length()); // e.g. 21.23302
@@ -574,6 +595,26 @@ void interpretGps() {
   speedkmh_now = speedKts.toFloat() * 1.852;
   heading_now = trackDegS.toInt();
 
+  if (!fix){
+    Serial.print("Fix gained: ");
+    Serial.print(latDec,6);
+    Serial.print(", ");
+    Serial.print(lonDec,6);
+    Serial.print(", ");
+    Serial.print(speedkmh_now,1);
+    Serial.print("km/h");
+
+    if (speedkmh_now > 3) {
+      Serial.print(", ");
+      Serial.print(heading_now,0);
+      Serial.println("deg");
+    }
+    else {
+      Serial.println();
+    }
+  }
+
+  fix = true;
 }
 
 void tncWrite(byte b) {
