@@ -2,19 +2,27 @@
 #include <avr/wdt.h>
 
 // board size
-// don't use pin 13
+// don't use pin 13 for the GPS
 // caps through board
 // passives layout
 // flip GPS
 // LEDs
+// buttons - beacon now
+
+// sw:
+// beacon at startup but with no pos
+// object rather than station
 
 //#define DEBUG_GPS_ALL
 
-#define GPSTXPIN 11 //not really, it's 13, but we use the LED
+#define GPSTXPIN 11 //not really, it's 13, but we use the LED, and we don't need to send anything to the GPS in this application
 #define GPSRXPIN 12
 
 #define TNCTXPIN 2
 #define TNCRXPIN 3
+
+#define BCN_BTN 8
+#define LED_TX 9
 
 SoftwareSerial kissSerial(TNCRXPIN, TNCTXPIN);
 SoftwareSerial gpsSerial(GPSRXPIN, GPSTXPIN);
@@ -64,7 +72,7 @@ unsigned long lastTx = 0;
 unsigned long dontCornerPegUntil = 0;
 const int rejectedCornerPegDisableWait = 3000; //ms. After not beaconing a suspect corner (e.g. going too slowly), don't check for corners for this many ms.
 String fromCall = "M0LTE-1";
-String comment = "tom@m0lte.uk https://twitter.com/tom_m0lte";
+String comment = "Wokingham Half Marathon";
 
 const int turn_threshold = 30; // degrees
 const int min_time_between_cornerpegs = 15000; // milliseconds
@@ -85,6 +93,8 @@ void setup() {
   kissSerial.begin(38400);
   Serial.begin(9600);
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(LED_TX, OUTPUT);
+  pinMode(BCN_BTN, INPUT);
 
   gpsSerial.begin(9600);
   clearGpsBuffer();
@@ -120,6 +130,53 @@ void loop() {
   handle_gps();
 
   handle_cornerpegging();
+
+  handle_fixled();
+
+  handle_bcnbtn();
+}
+
+int buttonState;
+bool bcnDemanded=false;
+
+unsigned long resumeReadingButtonAt=0;
+void handle_bcnbtn() {
+
+  if (millis() < resumeReadingButtonAt)
+    return;
+    
+  buttonState = digitalRead(BCN_BTN);
+
+  if (buttonState == HIGH) {
+    resumeReadingButtonAt = millis() + 1000;
+    bcnDemanded = true;
+    digitalWrite(LED_TX, HIGH);
+  }
+}
+
+unsigned long sched, now;
+bool flashState;
+
+void handle_fixled() {
+
+  now = millis();
+
+  if (now > sched) {
+   
+    if (flashState) {
+      digitalWrite(LED_BUILTIN, LOW);
+      flashState = false;
+    } else {
+      digitalWrite(LED_BUILTIN, HIGH);
+      flashState = true;
+    }
+
+    if (!fix) {
+      sched = now + 200;
+    } else {
+      sched = now + 1000;
+    }  
+  }
 }
 
 void handle_tnc_output(){
@@ -139,10 +196,38 @@ void handle_rollover(unsigned long now){
 
 bool corner=false;
 
+bool shouldTransmit(){
+
+  if (!fix)
+    return false;
+
+  if (bcnDemanded)
+    return true;
+
+  if (millisSinceLastTx > min_transmit_interval) {
+    
+    if (corner) {
+      return true;
+    }
+    
+    if (lastTx == 0) {
+      return true;
+    }
+
+    if (millisSinceLastTx > beacon_rate) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 void handle_transmit(unsigned long now){
   // send as soon as possible, and every 60 seconds
-  if (fix && millisSinceLastTx > min_transmit_interval && (corner || lastTx == 0 || millisSinceLastTx > beacon_rate)){
-
+  if (shouldTransmit()){
+    
+    bcnDemanded = false;
+    
     if (DEBUG) {
       if (corner) {
         Serial.println("corner");
@@ -161,7 +246,7 @@ void handle_transmit(unsigned long now){
     setPath();
     setAprsMessageType();
     
-    flash();
+    txflash();
     
     tncWrite(KISS_FEND);
     tncWrite(KISS_CMD_DATAFRAME0);
@@ -642,16 +727,15 @@ void tncSendField(byte field[]) {
   }  
 }
 
-void flash(){
-  digitalWrite(LED_BUILTIN, HIGH); 
+void txflash(){
+  digitalWrite(LED_TX, HIGH); 
   delay(50);                       
-  digitalWrite(LED_BUILTIN, LOW);  
+  digitalWrite(LED_TX, LOW);  
   delay(50);
-  digitalWrite(LED_BUILTIN, HIGH); 
+  digitalWrite(LED_TX, HIGH); 
   delay(50);                       
-  digitalWrite(LED_BUILTIN, LOW);  
+  digitalWrite(LED_TX, LOW);  
 }
-
 
 // sample address field - this is carefully packed, NOT straight ASCII
 /*byte addressField_sample[255] = { 
