@@ -33,6 +33,8 @@
 #define ONE_WIRE_BUS 7
 #define BATT_VOLT_PIN 1
 
+#define TEMP_SENSE_EVERY_MS 60000
+
 #define VOLT_SAMPLES 5
 int voltSample;
 float volts[VOLT_SAMPLES];
@@ -141,7 +143,7 @@ void setup() {
 
   #ifdef ONEWIRETELEM
   sensors.begin();
-  tempSched = millis() + 5000;
+  tempSched = millis() + TEMP_SENSE_EVERY_MS;
   #endif
   
   Serial.println("Started, waiting for fix");
