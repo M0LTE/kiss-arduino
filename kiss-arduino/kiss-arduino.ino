@@ -94,7 +94,7 @@ const int min_transmit_interval = 15000; // min time between beacons
 const int speed_threshold_kph = 10;
 unsigned long last_corner_time;
 
-unsigned long beacon_rate = 60000; // ms
+unsigned long beacon_rate = 30000; // ms
 int heading_at_last_beacon;
 int heading_now;
 float speedkmh_now;
@@ -146,7 +146,7 @@ void setup() {
   tempSched = millis() + TEMP_SENSE_EVERY_MS;
   #endif
   
-  Serial.println("Started, waiting for fix");
+  Serial.println(F("Started, waiting for fix"));
 }
 
 void loop() {
@@ -195,11 +195,11 @@ void handle_voltage(){
     avgVolts = avgVolts / (float)VOLT_SAMPLES;
 
     #ifdef VOLT_DEBUG
-    Serial.print("voltSample: ");
+    Serial.print(F("voltSample: "));
     Serial.print(voltSample);
-    Serial.print(" volt:");
+    Serial.print(F(" volt:"));
     Serial.print(volts[0], 2);
-    Serial.print(" avgVolts:");
+    Serial.print(F(" avgVolts:"));
     Serial.println(avgVolts, 2);
     #endif
     
@@ -212,9 +212,9 @@ void handle_temps(){
   if (millis() > tempSched){
     sensors.requestTemperatures();
     tempC = sensors.getTempCByIndex(0);
-    Serial.print("Temp: ");
+    Serial.print(F("Temp: "));
     Serial.print(tempC, 1);
-    Serial.println("C");
+    Serial.println(F("C"));
     tempSched = millis() + 10000;
   }
   #endif
@@ -309,8 +309,10 @@ bool shouldTransmit(){
 #ifdef ONEWIRETELEM
 String comment;
 #else
-String comment = String("Pelicase");
+String comment = String(F("Pelicase"));
 #endif
+
+char comment2[20];
 
 void handle_transmit(unsigned long now){
   // send as soon as possible, and every 60 seconds
@@ -320,7 +322,7 @@ void handle_transmit(unsigned long now){
     
     if (DEBUG) {
       if (corner) {
-        Serial.println("corner");
+        Serial.println(F("corner"));
       }
     }
 
@@ -332,8 +334,19 @@ void handle_transmit(unsigned long now){
     setSymbol(SYM_CAR);
 
     #ifdef ONEWIRETELEM
-    comment = String(tempC, 1) + "C " + String(avgVolts,2) + "V";
+    comment = String(tempC, 1) + F("C ") + String(avgVolts,2) + F("V");
+    /* start of an attempt to move away from String
+    int buflen=6;
+    char buf[buflen]; // nn.nn + 0x00
+    //dtostrf(floatVar, minStringWidthIncDecimalPoint, numVarsAfterDecimal, charBufWithExtraByteForNull);
+    // floatIn, buflen-1, dp, outputBuffer
+    dtostrf(tempC, 5, 1, buf);
+    for (int i=0;i<buflen-1;i++){
+      Serial.print(buf[i]);
+    }
+    Serial.println();*/
     #endif
+    
     setComment(comment);
     setLat(latDec);
     setLon(lonDec);
@@ -689,6 +702,19 @@ void setLon(float lon) {
 void setSymbol(const char sym[]){
   infoField[9] = sym[0];
   infoField[19] = sym[1];
+}
+
+void setComment2(char comment[]) {
+  int i=0;
+  while (true) {
+    if (comment[i] == 0){
+      return;
+    }
+
+    infoField[i+20] = comment[i];
+    
+    i++;
+  }
 }
 
 void setComment(String &comment){
