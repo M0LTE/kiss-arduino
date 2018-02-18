@@ -1,4 +1,5 @@
 #define ONEWIRETELEM
+
 //#define DEBUG_GPS_ALL
 
 #ifdef ONEWIRETELEM
@@ -30,6 +31,11 @@
 #define LED_TX 9
 
 #define ONE_WIRE_BUS 7
+#define BATT_VOLT_PIN 1
+
+#define VOLT_SAMPLES 5
+int voltSample;
+float volts[VOLT_SAMPLES];
 
 SoftwareSerial kissSerial(TNCRXPIN, TNCTXPIN);
 SoftwareSerial gpsSerial(GPSRXPIN, GPSTXPIN);
@@ -137,6 +143,11 @@ void setup() {
   sensors.begin();
   tempSched = millis() + 5000;
   #endif
+
+  for (int i=0;i<10;i++) {
+    voltSample = analogRead(BATT_VOLT_PIN);
+    delay(100);
+  }
   
   Serial.println("Started, waiting for fix");
 }
@@ -163,6 +174,38 @@ void loop() {
   handle_bcnbtn();
 
   handle_temps();
+
+  handle_voltage();
+}
+
+unsigned long voltSched;
+float avgVolts;
+
+void handle_voltage(){
+  if (millis() > voltSched){
+    voltSample = analogRead(BATT_VOLT_PIN);
+
+    for (int i = VOLT_SAMPLES - 1; i > 0; i--) {
+      volts[i] = volts[i-1];
+    }
+    
+    volts[0] = voltSample / 22.75;
+
+    avgVolts = 0;
+    for (int i = 0; i < VOLT_SAMPLES; i++) {
+      avgVolts += volts[i];
+    }
+    avgVolts = avgVolts / (float)VOLT_SAMPLES;
+
+    Serial.print("voltSample: ");
+    Serial.print(voltSample);
+    Serial.print(" volt:");
+    Serial.print(volts[0], 2);
+    Serial.print(" avgVolts:");
+    Serial.println(avgVolts, 2);
+    
+    voltSched = millis() + 1000;
+  }
 }
 
 void handle_temps(){
@@ -290,7 +333,7 @@ void handle_transmit(unsigned long now){
     setSymbol(SYM_CAR);
 
     #ifdef ONEWIRETELEM
-    comment = String(tempC, 1) + "C";
+    comment = String(tempC, 1) + "C " + String(avgVolts,2) + "V";
     #endif
     setComment(comment);
     setLat(latDec);
