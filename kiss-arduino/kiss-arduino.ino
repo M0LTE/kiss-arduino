@@ -1,5 +1,5 @@
 #define ONEWIRETELEM
-
+//#define VOLT_DEBUG
 //#define DEBUG_GPS_ALL
 
 #ifdef ONEWIRETELEM
@@ -143,11 +143,6 @@ void setup() {
   sensors.begin();
   tempSched = millis() + 5000;
   #endif
-
-  for (int i=0;i<10;i++) {
-    voltSample = analogRead(BATT_VOLT_PIN);
-    delay(100);
-  }
   
   Serial.println("Started, waiting for fix");
 }
@@ -174,7 +169,7 @@ void loop() {
   handle_bcnbtn();
 
   handle_temps();
-
+  
   handle_voltage();
 }
 
@@ -197,12 +192,14 @@ void handle_voltage(){
     }
     avgVolts = avgVolts / (float)VOLT_SAMPLES;
 
+    #ifdef VOLT_DEBUG
     Serial.print("voltSample: ");
     Serial.print(voltSample);
     Serial.print(" volt:");
     Serial.print(volts[0], 2);
     Serial.print(" avgVolts:");
     Serial.println(avgVolts, 2);
+    #endif
     
     voltSched = millis() + 1000;
   }
