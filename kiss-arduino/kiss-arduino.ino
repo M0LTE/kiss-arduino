@@ -1,3 +1,10 @@
+#define ONEWIRETELEM
+//#define DEBUG_GPS_ALL
+
+#ifdef ONEWIRETELEM
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#endif
 #include <SoftwareSerial.h>
 #include <avr/wdt.h>
 
@@ -13,8 +20,6 @@
 // beacon at startup but with no pos
 // object rather than station
 
-//#define DEBUG_GPS_ALL
-
 #define GPSTXPIN 11 //not really, it's 13, but we use the LED, and we don't need to send anything to the GPS in this application
 #define GPSRXPIN 12
 
@@ -23,6 +28,8 @@
 
 #define BCN_BTN 8
 #define LED_TX 9
+
+#define ONE_WIRE_BUS 7
 
 SoftwareSerial kissSerial(TNCRXPIN, TNCTXPIN);
 SoftwareSerial gpsSerial(GPSRXPIN, GPSTXPIN);
@@ -72,7 +79,6 @@ unsigned long lastTx = 0;
 unsigned long dontCornerPegUntil = 0;
 const int rejectedCornerPegDisableWait = 3000; //ms. After not beaconing a suspect corner (e.g. going too slowly), don't check for corners for this many ms.
 String fromCall = "M0LTE-1";
-String comment = "Wokingham Half Marathon";
 
 const int turn_threshold = 30; // degrees
 const int min_time_between_cornerpegs = 15000; // milliseconds
@@ -88,6 +94,22 @@ unsigned long millisSinceLastTx;
 
 char gpsBuf[255];
 int gpsCur=0;
+
+#ifdef ONEWIRETELEM
+/*  ds18b20
+ *  pin 1 - GND
+ *  pin 2 - data
+ *  pin 3 - +5V
+ *  4.7k resistor between pin 2 and 3
+ *  code untested - need to change over to mic-e format I think for telemetry - for now in the comments
+ *  Requires: https://halckemy.s3.amazonaws.com/uploads/attachments/229743/OneWire.zip
+ *            https://github.com/milesburton/Arduino-Temperature-Control-Library
+ */
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+unsigned long tempSched;
+float tempC;
+#endif
 
 void setup() {
   kissSerial.begin(38400);
@@ -110,6 +132,11 @@ void setup() {
   }
 
   wdt_enable(WDTO_1S);
+
+  #ifdef ONEWIRETELEM
+  sensors.begin();
+  tempSched = millis() + 5000;
+  #endif
   
   Serial.println("Started, waiting for fix");
 }
@@ -134,6 +161,21 @@ void loop() {
   handle_fixled();
 
   handle_bcnbtn();
+
+  handle_temps();
+}
+
+void handle_temps(){
+  #ifdef ONEWIRETELEM
+  if (millis() > tempSched){
+    sensors.requestTemperatures();
+    tempC = sensors.getTempCByIndex(0);
+    Serial.print("Temp: ");
+    Serial.print(tempC, 1);
+    Serial.println("C");
+    tempSched = millis() + 10000;
+  }
+  #endif
 }
 
 int buttonState;
@@ -222,6 +264,12 @@ bool shouldTransmit(){
   return false;
 }
 
+#ifdef ONEWIRETELEM
+String comment;
+#else
+String comment = String("Pelicase");
+#endif
+
 void handle_transmit(unsigned long now){
   // send as soon as possible, and every 60 seconds
   if (shouldTransmit()){
@@ -240,6 +288,10 @@ void handle_transmit(unsigned long now){
     
     setFromCall(fromCall);
     setSymbol(SYM_CAR);
+
+    #ifdef ONEWIRETELEM
+    comment = String(tempC, 1) + "C";
+    #endif
     setComment(comment);
     setLat(latDec);
     setLon(lonDec);
