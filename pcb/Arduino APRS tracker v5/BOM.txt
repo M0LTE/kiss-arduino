@@ -3,28 +3,29 @@ BOM
 2x Arduino Pro Mini eBay 182630720464 £2.15 each
 1x GPS eBay 152939655666 £10.75
 1x L7808CV eBay 172377863651 £0.23
-c1
-c2
+c1 RX audio DC blocking cap 10nF (103) eBay 231179599601
+c2 TX audio DC blocking cap 100nF (104) eBay 231179599601
 cout1 470nF electrolytic RS 711-1677
-cin1 220nF electrolytic RS 167-1538
-r1
-r2
-r3 pot 100k eBay 130894545879 £0.184
-r4
-r5
-r6
-r7
-r8
-r9
-r10
-r11
-r12
-q1 bc547/8
-q2 bc547/8
+cin1 220nF electrolytic RS 167-1538 / eBay 221321519025
+r1 PTT current limiting resistor 1k
+r2 RX audio offset potential divider 10k
+r3 preset 100k eBay 130894545879 £0.184
+r4 RX audio offset potential divider 10k
+r5 Onewire vcc-d 4.7k
+r6 beacon button pull-down 10k
+r7 battery voltage sense PD (VCC to A1) 18k
+r8 battery voltage sense PD (A1 to GND) 6.8k
+r9 fix LED current limiting resistor 150R
+r10 TX LED current limiting resistor 150R
+r11 relay current limiting resistor 4.7k
+r12 spare LED current limiting resistor 150R
+q1 bc547/8 eBay 282068307069 £0.18
+q2 bc547/8 eBay 282068307069 £0.18
 d1 RS 628-8931
 u1 g5q 5v relay e.g. RS 841-1420
 GPS 4 way pin header
 1x 4 way screw terminal (2x RS 144-4330)
 3x 2 way screw terminal (1x RS 144-4330)
-3x LED
+3x LED (green, red, or yellow)
 1x DS18b20 eBay 161879382812 £1.25
+2x 12 way female pcb socket eBay 131921173215 £0.21 each
