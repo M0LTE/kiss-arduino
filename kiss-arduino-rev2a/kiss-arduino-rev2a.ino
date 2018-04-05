@@ -15,8 +15,17 @@
 
 // options
 #define AUTO_TX_MIN_INTERVAL_MS 15000
-#define BEACON_INTERVAL_MS 600000
+#define BEACON_INTERVAL_MS 180000
 #define HEXDEBUG 0
+
+// 1 deg lat is 111000m
+// 1m is 1/111000 degrees
+// 1m is 1000000/111000 microdegrees
+// 1m is 9 microdegrees
+// so 3000 microdegrees is approx 333m
+// not that different for longitude
+// this is very much ballpark but it should work ok
+#define DISTANCE_THRESHOLD_uDEG 3000
 
 // compatibility
 #define _itoa itoa // this helps code compile in Visual C++ as well as Arduino land
@@ -126,12 +135,12 @@ bool far_from_last_tx(){
   long dy = yEnd - yStart;
   
   double dist = sqrt(pow(dx,2) + pow(dy,2));
-  if (millis() - lastTestedDistance > 5000){
+  /*if (millis() - lastTestedDistance > 5000){
     Serial.println(dist);
     lastTestedDistance = millis();
-  }
+  }*/
   
-  return false;
+  return dist > DISTANCE_THRESHOLD_uDEG;
 }
 
 bool should_transmit_location() {
