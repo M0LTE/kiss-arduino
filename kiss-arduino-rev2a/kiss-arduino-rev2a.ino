@@ -17,6 +17,11 @@
 #define AUTO_TX_MIN_INTERVAL_MS 15000
 #define BEACON_INTERVAL_MS 60000
 
+// compatibility
+#define _itoa itoa // this helps code compile in Visual C++ as well as Arduino land
+
+char locationComment[25] = "3T Bus 1";
+
 // global variables
 bool bcnDemanded = false;
 unsigned long lastTX = 0;
@@ -116,71 +121,191 @@ bool should_transmit() {
 #define INFO_FIELD_LEN 255
 byte infoField[INFO_FIELD_LEN];
 
-void build_info_field(){
-  // e.g. !5126.82N/00101.68W>Arduino testing
+const char waitingMsg[] = "Waiting for fix";
 
-  for (int i=0;i<INFO_FIELD_LEN;i++) {
-    infoField[i] = 0;
+char buf[4] = {0,0,0,0};
+
+void processLongitude(){
+  // clear buffer
+  for (int i = 0; i < sizeof(buf); i++) {
+    buf[i] = 0;
   }
 
-  infoField[0] = '!';
-  
-  //Serial.println(latitude_uDeg); // 51447326 -> 51d 26.84m
+  // 00101.68W
+  long absLongUdeg;
+  if (longitude_uDeg < 0) {
+    absLongUdeg = longitude_uDeg * -1;
+  }
+  else {
+    absLongUdeg = longitude_uDeg;
+  }
 
+  // 1027283
+  long lonWholeuDeg = (absLongUdeg / 1000000) * 1000000; // 1000000
+  long lonWholeDeg = lonWholeuDeg / 1000000;
+  _itoa(lonWholeDeg, buf, 10);
+      
+  // pad
+  if (lonWholeDeg < 10) {
+    infoField[10] = '0';
+    infoField[11] = '0';
+    infoField[12] = buf[0];
+  }
+  else if (lonWholeDeg < 100) {
+    infoField[10] = '0';
+    infoField[11] = buf[0];
+    infoField[12] = buf[1];
+  }
+  else {
+    infoField[10] = buf[0];
+    infoField[11] = buf[1];
+    infoField[12] = buf[2];
+  }
+
+  long lonFracUDeg = absLongUdeg - lonWholeuDeg; // 27283
+  long lonuFrac = lonFracUDeg * 60; // = 1636980
+  long preDP = lonuFrac / 1000000; // 1
+  long postDP = lonuFrac - preDP * 1000000;
+  float postDPRounded_f = postDP / 10000.;
+  long postDPRounded = lround(postDPRounded_f); // 64
+
+  // clear buffer
+  for (int i = 0; i < sizeof(buf); i++) {
+    buf[i] = 0;
+  }
+
+  // 001 01.68W
+  _itoa(preDP, buf, 10);
+  if (preDP < 10) {
+    infoField[13] = '0';
+    infoField[14] = buf[0];
+  }
+  else {
+    infoField[13] = buf[0];
+    infoField[14] = buf[1];
+  }
+
+  infoField[15] = '.';
+  
+  _itoa(postDPRounded, buf, 10);
+  if (postDPRounded < 10) {
+    infoField[16] = '0';
+    infoField[17] = buf[0];
+  }
+  else {
+    infoField[16] = buf[0];
+    infoField[17] = buf[1];
+  }
+
+  if (longitude_uDeg < 0) {
+    infoField[18] = 'W';
+  }
+  else {
+    infoField[18] = 'E';
+  }
+
+  infoField[19] = '>';
+}
+
+void processComment(char msg[], int msgLen) {
+  for (int i = 0; i < msgLen; i++) {
+    infoField[20 + i] = msg[i];
+  }
+}
+
+void processLatitude() {
   long abslatitude_uDeg;
-  if (_latitude_uDeg < 0){
-    abslatitude_uDeg = _latitude_uDeg * -1;
-  } else {
-    abslatitude_uDeg = _latitude_uDeg;
+  if (latitude_uDeg < 0) {
+    abslatitude_uDeg = latitude_uDeg * -1;
   }
-
-  int latWholeDeg = abslatitude_uDeg / 1000000; // 51
-  Serial.println(latWholeDeg);
+  else {
+    abslatitude_uDeg = latitude_uDeg;
+  }
   
+  int latWholeDeg = abslatitude_uDeg / 1000000; // 51
   long lat_whole = latWholeDeg * 1000000;
   long lat_frac = abslatitude_uDeg - lat_whole;
-  Serial.println(lat_frac); // 447326
+  long latMegaMins = lat_frac * 60;
+  float latMinsPart_f = latMegaMins / 10000.;
+  long latMinsPart = lround(latMinsPart_f);
+  long latWholeMins = latMinsPart / 100;
+  long latDecMinsPart = latMinsPart - latWholeMins * 100;
 
-  long megaMins = lat_frac * 60;
-  Serial.println(megaMins); // 26838480
-
-  long minsPart = megaMins / 10000;
-  Serial.println(minsPart); // 2683
-
-  long wholeMins = minsPart/100;
-
-  long decMinsPart = minsPart - wholeMins*100;
-  Serial.println(decMinsPart); // 83
+  #if FALSE
+  Serial.print("abslatitude_uDeg: "); Serial.println(abslatitude_uDeg);
+  Serial.print("latWholeDeg: "); Serial.println(latWholeDeg);
+  Serial.print("lat_whole: "); Serial.println(lat_whole);
+  Serial.print("lat_frac: "); Serial.println(lat_frac);
+  Serial.print("latMegaMins: "); Serial.println(latMegaMins);
+  Serial.print("latMinsPart_f: "); Serial.println(latMinsPart_f);
+  Serial.print("latMinsPart: "); Serial.println(latMinsPart);
+  Serial.print("latWholeMins: "); Serial.println(latWholeMins);
+  Serial.print("latDecMinsPart: "); Serial.println(latDecMinsPart);
+  #endif
   
-  char buf[2];
-  itoa(latWholeDeg, buf, 10);
-  infoField[1] = buf[0];
-  infoField[2] = buf[1];
-  itoa(wholeMins, buf, 10);
+  _itoa(latWholeDeg, buf, 10);
+  if (latWholeDeg < 10) {
+    infoField[1] = '0';
+    infoField[2] = buf[0];
+  }
+  else {
+    infoField[1] = buf[0];
+    infoField[2] = buf[1];
+  }
+
+  _itoa(latWholeMins, buf, 10);
   infoField[3] = buf[0];
   infoField[4] = buf[1];
   infoField[5] = '.';
-  itoa(decMinsPart, buf, 10);
+  _itoa(latDecMinsPart, buf, 10);
   infoField[6] = buf[0];
   infoField[7] = buf[1];
   infoField[8] = latitude_uDeg > 0 ? 'N' : 'S';
+}
 
-  for (int i=0;i<INFO_FIELD_LEN;i++){
-    if (infoField[i] == 0) {
-      break;
-    }
-    Serial.write(infoField[i]);
+void build_info_field(char msg[], int msgLen) {
+  // e.g. !5126.82N/00101.68W>Arduino testing
+
+  for (int i = 0; i<INFO_FIELD_LEN; i++) {
+    infoField[i] = 0;
   }
 
-  // bookmark.
-  Lat seems to work. Need to work on longitude encoding now.
+  if (fixValid){
+    infoField[0] = '!';
+   
+    processLatitude();
+
+    // separator
+    infoField[9] = '/';
+  
+    processLongitude();
+
+    processComment(msg, msgLen);
+    
+  } else {
+    infoField[0] = '>'; // status message
+    for (int i=0;i<sizeof(waitingMsg);i++){
+      infoField[1+i] = waitingMsg[i];
+      if (waitingMsg[i] == 0){
+        break;
+      }
+    }
+  }
 }
 
 void transmit() {
   lastTX = millis();
   Serial.println("tx");
 
-  build_info_field();
+  build_info_field(locationComment, sizeof(locationComment));
+  
+  for (int i = 0; i<INFO_FIELD_LEN; i++) {
+    if (infoField[i] == 0) {
+      break;
+    }
+    Serial.write(infoField[i]);
+  }
+  Serial.println();
 }
 
 unsigned long resumeReadingButtonAt = 0;
