@@ -15,7 +15,7 @@
 
 // options
 #define AUTO_TX_MIN_INTERVAL_MS 15000
-#define BEACON_INTERVAL_MS 60000
+#define BEACON_INTERVAL_MS 600000
 #define HEXDEBUG 0
 
 // compatibility
@@ -28,12 +28,14 @@
 #define DELIM_2 0xF0
 
 const char waitingMsg[] = "Waiting for fix";
+char gotFixMsg[] = "Got fix";
 
 char locationComment[25] = "3T Bus";
 
 // global variables
 bool bcnDemanded = false;
 unsigned long lastTX = 0;
+unsigned long lastLocationTX = 0;
 SoftwareSerial kissSerial(TNC_RX_PIN, TNC_TX_PIN);
 SoftwareSerial gpsSerial(GPS_RX_PIN, GPS_TX_PIN);
 char nmeaBuffer[85];
@@ -84,7 +86,7 @@ void handle_gps() {
           altitude_m = alt / 1000;
 
           fixValid = true;
-
+          
           /*Serial.print(latitude_microDeg / 1000000., 6);
           Serial.print(", ");
           Serial.print(longitude_microDeg / 1000000., 6);
@@ -108,21 +110,52 @@ bool overMinInterval(){
   } 
 }
 
-bool should_transmit() {
+unsigned long lastTestedDistance = 0;
+bool far_from_last_tx(){
+  
+  if (!fixValid){
+    return false;
+  }
+
+  long xStart = lastLatTransmitted_uDeg;
+  long xEnd = latitude_uDeg;
+  long yStart = lastLonTransmitted_uDeg;
+  long yEnd = longitude_uDeg;
+
+  long dx = xEnd - xStart;
+  long dy = yEnd - yStart;
+  
+  double dist = sqrt(pow(dx,2) + pow(dy,2));
+  if (millis() - lastTestedDistance > 5000){
+    Serial.println(dist);
+    lastTestedDistance = millis();
+  }
+  
+  return false;
+}
+
+bool should_transmit_location() {
 
   if (bcnDemanded) {
     bcnDemanded = false;
     return true;
   }
 
+  if (fixValid && lastLocationTX == 0){
+    return true;
+  }
+  
   if (!overMinInterval()) {
     return false;
   }
 
-  // TODO: dead reckoning
   if (millis() - lastTX > BEACON_INTERVAL_MS){
     return true;
   }
+
+  //if (far_from_last_tx()) {
+    //return true;
+  //}
   
   return false;
 }
@@ -277,27 +310,16 @@ void build_info_field(char msg[], int msgLen) {
     infoField[i] = 0;
   }
 
-  if (fixValid){
-    infoField[0] = '!';
-   
-    processLatitude();
+  infoField[0] = '!';
+ 
+  processLatitude();
 
-    // separator
-    infoField[9] = '/';
-  
-    processLongitude();
+  // separator
+  infoField[9] = '/';
 
-    processComment(msg, msgLen);
-    
-  } else {
-    infoField[0] = '>'; // status message
-    for (int i=0;i<sizeof(waitingMsg);i++){
-      infoField[1+i] = waitingMsg[i];
-      if (waitingMsg[i] == 0){
-        break;
-      }
-    }
-  }
+  processLongitude();
+
+  processComment(msg, msgLen);
 }
 
 #define ADDRESS_FIELD_LEN 21
@@ -334,20 +356,45 @@ void tncSendField(byte field[], int maxlen) {
   }  
 }
 
-void transmit() {
-  lastTX = millis();
-  Serial.println("tx");
+bool transmittingNoFix = false;
 
-  build_info_field(locationComment, sizeof(locationComment));
-  
-  for (int i = 0; i<INFO_FIELD_LEN; i++) {
-    if (infoField[i] == 0) {
+void transmitGotFix(){
+  infoField[0] = '>'; // status message
+  for (int i=0;i<sizeof(gotFixMsg);i++){
+    infoField[1+i] = gotFixMsg[i];
+    if (gotFixMsg[i] == 0){
       break;
     }
-    Serial.write(infoField[i]);
   }
-  Serial.println();
 
+  transmit();
+}
+
+void transmitLocation() {
+
+  lastTX = millis();
+  
+  if (fixValid){
+    lastLocationTX = millis();
+    build_info_field(locationComment, sizeof(locationComment));
+  } else {
+    infoField[0] = '>'; // status message
+    for (int i=0;i<sizeof(waitingMsg);i++){
+      infoField[1+i] = waitingMsg[i];
+      if (waitingMsg[i] == 0){
+        break;
+      }
+    }
+    transmittingNoFix = true;
+  }
+
+  lastLatTransmitted_uDeg = latitude_uDeg;
+  lastLonTransmitted_uDeg = longitude_uDeg;
+
+  transmit();
+}
+
+void transmit(){
   tncWrite(KISS_FEND);
   tncWrite(KISS_CMD_DATAFRAME0);
   tncSendField(addressField, ADDRESS_FIELD_LEN);
@@ -376,7 +423,14 @@ void loop() {
 
   handle_bcnbtn();
 
-  if (should_transmit()) {
-    transmit();
+  if (should_transmit_location()) {
+    transmitLocation();
+    if (transmittingNoFix && fixValid) {
+      delay(5000);
+      transmitGotFix();
+      transmittingNoFix = false;
+    }
   }
+
+  far_from_last_tx();
 }
