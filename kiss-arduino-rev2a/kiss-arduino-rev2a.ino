@@ -16,11 +16,20 @@
 // options
 #define AUTO_TX_MIN_INTERVAL_MS 15000
 #define BEACON_INTERVAL_MS 60000
+#define HEXDEBUG 0
 
 // compatibility
 #define _itoa itoa // this helps code compile in Visual C++ as well as Arduino land
 
-char locationComment[25] = "3T Bus 1";
+// constants
+#define KISS_FEND 0xC0
+#define KISS_CMD_DATAFRAME0 0x00
+#define DELIM_1 0x03
+#define DELIM_2 0xF0
+
+const char waitingMsg[] = "Waiting for fix";
+
+char locationComment[25] = "3T Bus";
 
 // global variables
 bool bcnDemanded = false;
@@ -120,8 +129,6 @@ bool should_transmit() {
 
 #define INFO_FIELD_LEN 255
 byte infoField[INFO_FIELD_LEN];
-
-const char waitingMsg[] = "Waiting for fix";
 
 char buf[4] = {0,0,0,0};
 
@@ -293,6 +300,40 @@ void build_info_field(char msg[], int msgLen) {
   }
 }
 
+#define ADDRESS_FIELD_LEN 21
+byte addressField[ADDRESS_FIELD_LEN] = { 
+  // from m0lte-13 to wide1-1, wide2-1
+  0xAE, 0x92, 0x88, 0x8A, 0x62, 0x40, 0x62,  // to WIDE1-1
+  0x9A, 0x60, 0x98, 0xA8, 0x8A, 0x40, 0x7A,  // from M0LTE-13
+  0xAE, 0x92, 0x88, 0x8A, 0x64, 0x40, 0x63   // via WIDE2-1 (last)
+};
+
+void tncWrite(byte b) {
+
+  kissSerial.write(b);
+  
+  #if HEXDEBUG
+    Serial.print(b, HEX);
+    Serial.print(" ");
+  #endif
+}
+
+void tncSendField(byte field[], int maxlen) {
+  for(int i = 0; i < maxlen; i++){
+
+    if (field[i] == 0){
+      break;
+    }
+    
+    kissSerial.write(field[i]);
+    
+    #if HEXDEBUG
+      Serial.print(field[i], HEX);
+      Serial.print(" ");
+    #endif
+  }  
+}
+
 void transmit() {
   lastTX = millis();
   Serial.println("tx");
@@ -306,6 +347,14 @@ void transmit() {
     Serial.write(infoField[i]);
   }
   Serial.println();
+
+  tncWrite(KISS_FEND);
+  tncWrite(KISS_CMD_DATAFRAME0);
+  tncSendField(addressField, ADDRESS_FIELD_LEN);
+  tncWrite(DELIM_1);
+  tncWrite(DELIM_2);
+  tncSendField(infoField, INFO_FIELD_LEN);
+  tncWrite(KISS_FEND);
 }
 
 unsigned long resumeReadingButtonAt = 0;
