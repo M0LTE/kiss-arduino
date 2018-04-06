@@ -35,11 +35,21 @@
 #define KISS_CMD_DATAFRAME0 0x00
 #define DELIM_1 0x03
 #define DELIM_2 0xF0
+const char FROM_CALL[] = "M0LTE-3";
+const char locationComment[25] = "3T Bus 3";
 
-const char waitingMsg[] = "Waiting for fix";
-char gotFixMsg[] = "Got fix";
+// See http://www.aprs.org/doc/APRS101.PDF page 104 (Appendix 2: The APRS Symbol Tables)
+// U is bus, > is car
+const char APRS_PRIMARY_SYMBOL = 'U'; 
 
-char locationComment[25] = "3T Bus";
+#define ADDRESS_FIELD_LEN 21
+byte addressField[ADDRESS_FIELD_LEN] = { 
+  // from m0lte-13 to wide1-1, wide2-1
+  0xAE, 0x92, 0x88, 0x8A, 0x62, 0x40, 0x62,  // to WIDE1-1
+  //0x9A, 0x60, 0x98, 0xA8, 0x8A, 0x40, 0x7A,  // from M0LTE-13
+  0,0,0,0,0,0,0, 
+  0xAE, 0x92, 0x88, 0x8A, 0x64, 0x40, 0x63   // via WIDE2-1 (last)
+};
 
 // global variables
 bool bcnDemanded = false;
@@ -57,6 +67,7 @@ void setup() {
   pinMode(LED_TX_PIN, OUTPUT);
   pinMode(BCN_BTN_PIN, INPUT);
   pinMode(BATT_VOLT_SENSE_PIN, INPUT);
+  setFromCall(FROM_CALL);
 }
 
 bool fixValid = false;
@@ -72,6 +83,93 @@ long lastLonTransmitted_uDeg = -1;
 
 bool shouldTransmitGotFixMessage = false;
 bool shouldTransmitLostFixMessage = false;
+
+void setFromCall(char call[]) {
+  byte from[7];
+  for (int i=0; i<7; i++) {
+    from[i]=0;
+  }
+  
+  setCallsign(from, call, false);
+
+  addressField[7] = from[0];
+  addressField[8] = from[1];
+  addressField[9] = from[2];
+  addressField[10] = from[3];
+  addressField[11] = from[4];
+  addressField[12] = from[5];
+  addressField[13] = from[6];
+}
+
+void setCallsign(char target[], char callsignAndSsid[], bool isLastCall) {
+  
+  char callsign[6];
+  callsign[0] = callsign[1] = callsign[2] = callsign[3] = callsign[4] = callsign[5] = ' ';
+  
+  char ssidArr[3];
+  ssidArr[0] = ssidArr[1] = ssidArr[2] = 0;
+  
+  bool inSsid = false;
+  
+  // loop through the callsign, does it contain an SSID
+  for (int i=0; i < 10; i++) {
+    char c = callsignAndSsid[i];
+
+    if (c == 0){
+      break;
+    }
+
+    if (!inSsid){
+      if (c == '-') {
+        inSsid = true;
+      }else {
+        callsign[i] = c;
+      }
+    } else {
+      if (ssidArr[0] == 0) {
+        ssidArr[0] = c;
+      } else {
+        ssidArr[1] = c;
+      }
+    }
+  }
+  
+  byte ssid;
+  if (ssidArr[0] == 0 && ssidArr[1] == 0) {
+    ssid = 0;
+  }
+  else{
+    ssid = atoi(ssidArr);
+    // convert ssidArr to integer
+    //ssid = ssidStr.toInt();
+  }
+
+  // at this point, callsign is a six character ASCII string, padded with whitespace if necessary, and ssid is an integer.
+
+  byte callBytes[6];
+  // left shift all the callsign bytes by 1
+  for (int i=0; i<6;i++){
+    callBytes[i] = callsign[i] << 1;
+  }
+  
+  byte ssidByte;
+  bitWrite(ssidByte,7,0);
+  bitWrite(ssidByte,6,1);
+  bitWrite(ssidByte,5,1);
+  bitWrite(ssidByte,4,bitRead(ssid,3));
+  bitWrite(ssidByte,3,bitRead(ssid,2));
+  bitWrite(ssidByte,2,bitRead(ssid,1));
+  bitWrite(ssidByte,1,bitRead(ssid,0));
+  bitWrite(ssidByte,0,isLastCall);
+  
+  target[0] = callBytes[0];
+  target[1] = callBytes[1];
+  target[2] = callBytes[2];
+  target[3] = callBytes[3];
+  target[4] = callBytes[4];
+  target[5] = callBytes[5];
+  target[6] = ssidByte;
+}
 
 void handle_gps() {
   // non-blocking
@@ -261,7 +359,7 @@ void processLongitude(){
     infoField[18] = 'E';
   }
 
-  infoField[19] = '>';
+  infoField[19] = APRS_PRIMARY_SYMBOL;
 }
 
 void processComment(char msg[], int msgLen) {
@@ -338,14 +436,6 @@ void build_info_field(char msg[], int msgLen) {
 
   processComment(msg, msgLen);
 }
-
-#define ADDRESS_FIELD_LEN 21
-byte addressField[ADDRESS_FIELD_LEN] = { 
-  // from m0lte-13 to wide1-1, wide2-1
-  0xAE, 0x92, 0x88, 0x8A, 0x62, 0x40, 0x62,  // to WIDE1-1
-  0x9A, 0x60, 0x98, 0xA8, 0x8A, 0x40, 0x7A,  // from M0LTE-13
-  0xAE, 0x92, 0x88, 0x8A, 0x64, 0x40, 0x63   // via WIDE2-1 (last)
-};
 
 void tncWrite(byte b) {
 
