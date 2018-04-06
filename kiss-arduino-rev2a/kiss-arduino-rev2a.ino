@@ -15,7 +15,7 @@
 
 // options
 #define AUTO_TX_MIN_INTERVAL_MS 15000L
-#define BEACON_INTERVAL_MS 30000L
+#define BEACON_INTERVAL_MS 300000L
 #define HEXDEBUG 0
 
 // 1 deg lat is 111000m
