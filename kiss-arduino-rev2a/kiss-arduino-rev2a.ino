@@ -12,6 +12,7 @@
 #define LED_FIX_PIN 13
 #define ONE_WIRE_BUS_PIN 7
 #define BATT_VOLT_SENSE_PIN 1
+#define RELAY_PIN 4
 
 // options
 #define AUTO_TX_MIN_INTERVAL_MS 15000L
@@ -65,9 +66,12 @@ void setup() {
   Serial.begin(9600);
   pinMode(LED_FIX_PIN, OUTPUT);
   pinMode(LED_TX_PIN, OUTPUT);
+  pinMode(RELAY_PIN, OUTPUT);
   pinMode(BCN_BTN_PIN, INPUT);
   pinMode(BATT_VOLT_SENSE_PIN, INPUT);
   setFromCall(FROM_CALL);
+
+  digitalWrite(RELAY_PIN, LOW);
 }
 
 bool fixValid = false;
