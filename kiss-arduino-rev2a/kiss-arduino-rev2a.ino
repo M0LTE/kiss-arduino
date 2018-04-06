@@ -135,12 +135,18 @@ bool far_from_last_tx(){
   long dy = yEnd - yStart;
   
   double dist = sqrt(pow(dx,2) + pow(dy,2));
-  /*if (millis() - lastTestedDistance > 5000){
+  if (millis() - lastTestedDistance > 5000){
     Serial.println(dist);
     lastTestedDistance = millis();
-  }*/
+  }
   
-  return dist > DISTANCE_THRESHOLD_uDEG;
+  bool overThreshold = dist > DISTANCE_THRESHOLD_uDEG;
+
+  if (overThreshold) {
+    Serial.println("over");
+  }
+  
+  return overThreshold;
 }
 
 bool should_transmit_location() {
@@ -162,9 +168,9 @@ bool should_transmit_location() {
     return true;
   }
 
-  //if (far_from_last_tx()) {
-    //return true;
-  //}
+  if (far_from_last_tx()) {
+    return true;
+  }
   
   return false;
 }
@@ -385,6 +391,8 @@ void transmitLocation() {
   
   if (fixValid){
     lastLocationTX = millis();
+    lastLatTransmitted_uDeg = latitude_uDeg;
+    lastLonTransmitted_uDeg = longitude_uDeg;
     build_info_field(locationComment, sizeof(locationComment));
   } else {
     infoField[0] = '>'; // status message
@@ -397,8 +405,7 @@ void transmitLocation() {
     transmittingNoFix = true;
   }
 
-  lastLatTransmitted_uDeg = latitude_uDeg;
-  lastLonTransmitted_uDeg = longitude_uDeg;
+  
 
   transmit();
 }
@@ -441,5 +448,5 @@ void loop() {
     }
   }
 
-  far_from_last_tx();
+  //far_from_last_tx();
 }
