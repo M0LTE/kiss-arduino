@@ -14,8 +14,8 @@
 #define BATT_VOLT_SENSE_PIN 1
 
 // options
-#define AUTO_TX_MIN_INTERVAL_MS 15000
-#define BEACON_INTERVAL_MS 180000
+#define AUTO_TX_MIN_INTERVAL_MS 15000L
+#define BEACON_INTERVAL_MS 30000L
 #define HEXDEBUG 0
 
 // 1 deg lat is 111000m
@@ -43,7 +43,6 @@ char locationComment[25] = "3T Bus";
 
 // global variables
 bool bcnDemanded = false;
-unsigned long lastTX = 0;
 unsigned long lastLocationTX = 0;
 SoftwareSerial kissSerial(TNC_RX_PIN, TNC_TX_PIN);
 SoftwareSerial gpsSerial(GPS_RX_PIN, GPS_TX_PIN);
@@ -66,12 +65,13 @@ long longitude_uDeg = -1;
 int speed_knots = -1;
 int course_degs = -1;
 long altitude_m = -1;
-unsigned long lastChanged = 0;
+unsigned long gpsPosLastChangedAt = 0;
 
 long lastLatTransmitted_uDeg = -1;
 long lastLonTransmitted_uDeg = -1;
-int lastSpeedTransmitted_Knots = -1;
-int lastCourseTransmitted_Degs = -1;
+
+bool shouldTransmitGotFixMessage = false;
+bool shouldTransmitLostFixMessage = false;
 
 void handle_gps() {
   // non-blocking
@@ -79,6 +79,9 @@ void handle_gps() {
     char c = gpsSerial.read();
     if (nmea.process(c)) {
       if (nmea.isValid()) {
+        if (!fixValid){
+          shouldTransmitGotFixMessage = true;
+        }
         long newLat = nmea.getLatitude();
         long newLon = nmea.getLongitude();
         long newSpeed = nmea.getSpeed();
@@ -87,7 +90,7 @@ void handle_gps() {
         bool altValid = nmea.getAltitude(alt);
 
         if (newLat != latitude_uDeg || newLon != longitude_uDeg || newSpeed / 1000 != speed_knots || newCourse / 1000 != course_degs || (altValid ? altitude_m != alt / 1000 : false)) {
-          lastChanged = millis();
+          gpsPosLastChangedAt = millis();
           latitude_uDeg = newLat;
           longitude_uDeg = newLon;
           speed_knots = newSpeed / 1000;
@@ -105,27 +108,16 @@ void handle_gps() {
         }
       } else {
         latitude_uDeg = longitude_uDeg = speed_knots = course_degs = altitude_m = -1;
+        if (fixValid) {
+          shouldTransmitLostFixMessage = true;
+        }
         fixValid = false;
       }
     }
   }
 }
 
-bool overMinInterval(){
-  if (millis() - lastTX > AUTO_TX_MIN_INTERVAL_MS) {
-    return true;
-  } else {
-    return false;
-  } 
-}
-
-unsigned long lastTestedDistance = 0;
-bool far_from_last_tx(){
-  
-  if (!fixValid){
-    return false;
-  }
-
+double get_dist_from_last_tx() {
   long xStart = lastLatTransmitted_uDeg;
   long xEnd = latitude_uDeg;
   long yStart = lastLonTransmitted_uDeg;
@@ -135,40 +127,50 @@ bool far_from_last_tx(){
   long dy = yEnd - yStart;
   
   double dist = sqrt(pow(dx,2) + pow(dy,2));
-  if (millis() - lastTestedDistance > 5000){
-    Serial.println(dist);
-    lastTestedDistance = millis();
-  }
+
+  return dist;
+}
+
+bool far_from_last_tx(){
   
+  if (!fixValid){
+    return false;
+  }
+
+  double dist = get_dist_from_last_tx();
+
   bool overThreshold = dist > DISTANCE_THRESHOLD_uDEG;
 
-  if (overThreshold) {
-    Serial.println("over");
-  }
-  
   return overThreshold;
+}
+
+unsigned long nextScheduledBeacon = millis() + BEACON_INTERVAL_MS;
+
+bool isTimeToBeacon(){
+  if (millis() > nextScheduledBeacon){
+    return true;
+  }
+
+  return false;
 }
 
 bool should_transmit_location() {
 
   if (bcnDemanded) {
     bcnDemanded = false;
+    Serial.println("Transmitting because beacon button was pressed");
     return true;
   }
 
-  if (fixValid && lastLocationTX == 0){
-    return true;
-  }
-  
-  if (!overMinInterval()) {
-    return false;
-  }
-
-  if (millis() - lastTX > BEACON_INTERVAL_MS){
+  // transmit at least this often
+  if (isTimeToBeacon()){
+    Serial.println("Transmitting because it's time to beacon");
     return true;
   }
 
+  // transmit if we're > x distance from last TX position sent
   if (far_from_last_tx()) {
+    Serial.println("Transmitting because we're far from where we last transmitted");
     return true;
   }
   
@@ -371,46 +373,38 @@ void tncSendField(byte field[], int maxlen) {
   }  
 }
 
-bool transmittingNoFix = false;
-
-void transmitGotFix(){
+void transmitStatus(char msg[], int maxlen) {
   infoField[0] = '>'; // status message
-  for (int i=0;i<sizeof(gotFixMsg);i++){
-    infoField[1+i] = gotFixMsg[i];
-    if (gotFixMsg[i] == 0){
+  for (int i=0;i<maxlen;i++){
+    infoField[1+i] = msg[i];
+    Serial.write(msg[i]);
+    if (msg[i] == 0){
       break;
     }
   }
 
-  transmit();
+  Serial.println();
+
+  sendFrame();
 }
 
 void transmitLocation() {
 
-  lastTX = millis();
-  
-  if (fixValid){
-    lastLocationTX = millis();
-    lastLatTransmitted_uDeg = latitude_uDeg;
-    lastLonTransmitted_uDeg = longitude_uDeg;
-    build_info_field(locationComment, sizeof(locationComment));
-  } else {
-    infoField[0] = '>'; // status message
-    for (int i=0;i<sizeof(waitingMsg);i++){
-      infoField[1+i] = waitingMsg[i];
-      if (waitingMsg[i] == 0){
-        break;
-      }
-    }
-    transmittingNoFix = true;
+  if (!fixValid){
+    Serial.println("Not transmitting location - no fix");
+    return;
   }
 
+  nextScheduledBeacon = millis() + BEACON_INTERVAL_MS;
   
-
-  transmit();
+  lastLatTransmitted_uDeg = latitude_uDeg;
+  lastLonTransmitted_uDeg = longitude_uDeg;
+  build_info_field(locationComment, sizeof(locationComment));
+  
+  sendFrame();
 }
 
-void transmit(){
+void sendFrame(){ 
   tncWrite(KISS_FEND);
   tncWrite(KISS_CMD_DATAFRAME0);
   tncSendField(addressField, ADDRESS_FIELD_LEN);
@@ -434,6 +428,36 @@ void handle_bcnbtn() {
   }
 }
 
+void handle_got_and_lost_fix_messages(){
+  if (shouldTransmitGotFixMessage) {
+    delay(2500);
+    transmitStatus("Got fix", 10);
+    shouldTransmitGotFixMessage = false;
+  } else if (shouldTransmitLostFixMessage) {
+    delay(2500);
+    transmitStatus("Lost fix", 10);
+    shouldTransmitLostFixMessage = false;
+  }
+}
+
+unsigned long get_msecs_until_beacon() {
+  return nextScheduledBeacon - millis();
+}
+
+unsigned long nextStatusPrint = 0;
+void handle_secondly_status(){
+  if (millis() > nextStatusPrint){
+
+    Serial.print("msec until beacon: ");
+    Serial.println(get_msecs_until_beacon());
+    
+    Serial.print("dist from last TX: ");
+    Serial.println(get_dist_from_last_tx());
+    
+    nextStatusPrint = millis() + 2000;
+  }
+}
+
 void loop() {
   handle_gps();
 
@@ -441,12 +465,10 @@ void loop() {
 
   if (should_transmit_location()) {
     transmitLocation();
-    if (transmittingNoFix && fixValid) {
-      delay(5000);
-      transmitGotFix();
-      transmittingNoFix = false;
-    }
   }
 
-  //far_from_last_tx();
+  handle_got_and_lost_fix_messages();
+
+  handle_secondly_status();
 }
+
