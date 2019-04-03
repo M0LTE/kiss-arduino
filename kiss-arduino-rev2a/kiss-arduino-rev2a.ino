@@ -27,7 +27,7 @@
 // not that different for longitude
 // this is very much ballpark but it should work ok
 // 4500udeg is 500m
-#define DISTANCE_THRESHOLD_m 1000
+#define DISTANCE_THRESHOLD_m 750
 
 // compatibility
 #define _itoa itoa // this helps code compile in Visual C++ as well as Arduino land
@@ -37,8 +37,8 @@
 #define KISS_CMD_DATAFRAME0 0x00
 #define DELIM_1 0x03
 #define DELIM_2 0xF0
-const char FROM_CALL[] = "M0LTE-3";
-const char locationComment[25] = "3T Bus 3";
+const char FROM_CALL[] = "M0LTE-2";
+const char locationComment[25] = "3T Bus 2";
 
 // See http://www.aprs.org/doc/APRS101.PDF page 104 (Appendix 2: The APRS Symbol Tables)
 // U is bus, > is car
