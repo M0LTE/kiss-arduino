@@ -16,7 +16,7 @@
 
 // options
 #define AUTO_TX_MIN_INTERVAL_MS 15000L
-#define BEACON_INTERVAL_MS 300000L
+#define BEACON_INTERVAL_MS 60000L
 #define HEXDEBUG 0
 
 // 1 deg lat is 111000m
@@ -37,7 +37,7 @@
 #define KISS_CMD_DATAFRAME0 0x00
 #define DELIM_1 0x03
 #define DELIM_2 0xF0
-const char FROM_CALL[] = "M0LTE-2";
+const char FROM_CALL[] = "2E0ELW-1";
 const char locationComment[25] = "3T Bus 2";
 
 // See http://www.aprs.org/doc/APRS101.PDF page 104 (Appendix 2: The APRS Symbol Tables)
@@ -80,7 +80,7 @@ void setup() {
   pinMode(BATT_VOLT_SENSE_PIN, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
   setFromCall(FROM_CALL);
-
+  digitalWrite(13, LOW); //switch off GPS Fix LED
   digitalWrite(RELAY_PIN, LOW);
 }
 
@@ -181,11 +181,13 @@ bool handle_gps() {
         longitude_uDeg = nmea.getLongitude();
         speed_knots = nmea.getSpeed();
         course_degs = nmea.getCourse();
+        digitalWrite(LED_FIX_PIN, HIGH); //switch on GPS Fix LED
         //altValid = nmea.getAltitude(altitude_m);
 
         return true;
       } else {
         latitude_uDeg = longitude_uDeg = speed_knots = course_degs = -1;
+        digitalWrite(LED_FIX_PIN, LOW); //switch off GPS Fix LED
         return false;
       }
     }
@@ -421,13 +423,15 @@ void build_info_field(char msg[], int msgLen) {
 }
 
 void tncWrite(byte b) {
-
+  digitalWrite(LED_TX_PIN, HIGH); //switch on TX LED
   kissSerial.write(b);
   
   #if HEXDEBUG
     Serial.print(b, HEX);
     Serial.print(" ");
   #endif
+  delay(10); //add a delay so the LED stays on longer, to better cover the transmit time period
+  digitalWrite(LED_TX_PIN, LOW); //switch off TX LED
 }
 
 void tncSendField(byte field[], int maxlen) {
@@ -436,13 +440,15 @@ void tncSendField(byte field[], int maxlen) {
     if (field[i] == 0){
       break;
     }
-    
+    digitalWrite(LED_TX_PIN, HIGH); //switch on TX LED
     kissSerial.write(field[i]);
     
     #if HEXDEBUG
       Serial.print(field[i], HEX);
       Serial.print(" ");
     #endif
+    delay(10); //add a delay so the LED stays on longer, to better cover the transmit time period
+    digitalWrite(LED_TX_PIN, LOW); //switch off TX LED
   }  
 }
 
@@ -544,4 +550,3 @@ void loop() {
   
   handle_secondly_status();
 }
-
