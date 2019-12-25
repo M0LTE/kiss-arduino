@@ -16,7 +16,7 @@
 
 // options
 #define AUTO_TX_MIN_INTERVAL_MS 15000L
-#define BEACON_INTERVAL_MS 300000L
+#define BEACON_INTERVAL_MS 60000L
 #define HEXDEBUG 0
 
 // 1 deg lat is 111000m
@@ -37,12 +37,12 @@
 #define KISS_CMD_DATAFRAME0 0x00
 #define DELIM_1 0x03
 #define DELIM_2 0xF0
-const char FROM_CALL[] = "M0LTE-2";
-const char locationComment[25] = "3T Bus 2";
+const char FROM_CALL[] = "2E0ELW-1";
+const char locationComment[25] = "Elwyn 2E0ELW Tracker 1";
 
 // See http://www.aprs.org/doc/APRS101.PDF page 104 (Appendix 2: The APRS Symbol Tables)
 // U is bus, > is car
-const char APRS_PRIMARY_SYMBOL = 'U'; 
+const char APRS_PRIMARY_SYMBOL = '>'; 
 
 #define ADDRESS_FIELD_LEN 21
 byte addressField[ADDRESS_FIELD_LEN] = { 
@@ -74,13 +74,40 @@ void setup() {
   gpsSerial.begin(9600);
   Serial.begin(9600);
   pinMode(LED_FIX_PIN, OUTPUT);
+  pinMode(LED_SPARE_PIN, OUTPUT);
   pinMode(LED_TX_PIN, OUTPUT);
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(BCN_BTN_PIN, INPUT);
   pinMode(BATT_VOLT_SENSE_PIN, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
   setFromCall(FROM_CALL);
-
+  // Begin LED self test - switch all LEDs on
+  digitalWrite(LED_FIX_PIN, HIGH);
+  digitalWrite(LED_SPARE_PIN, HIGH);
+  digitalWrite(LED_TX_PIN, HIGH);
+  delay(500); // Wait half a second, then switch all LEDs off
+  digitalWrite(LED_FIX_PIN, LOW);
+  digitalWrite(LED_SPARE_PIN, LOW);
+  digitalWrite(LED_TX_PIN, LOW);
+  delay(500); // Wait half a second, then cycle each LED in turn, lighting for half a second
+  digitalWrite(LED_FIX_PIN, HIGH);
+  delay(500);
+  digitalWrite(LED_FIX_PIN, LOW);
+  digitalWrite(LED_SPARE_PIN, HIGH);
+  delay(500);
+  digitalWrite(LED_SPARE_PIN, LOW);
+  digitalWrite(LED_TX_PIN, HIGH);
+  delay(500);
+  digitalWrite(LED_TX_PIN, LOW);
+  delay(500); // Switch all LEDs on again
+  digitalWrite(LED_FIX_PIN, HIGH);
+  digitalWrite(LED_SPARE_PIN, HIGH);
+  digitalWrite(LED_TX_PIN, HIGH);
+  delay(500); // Switch all LEDs off in preparation for normal operation
+  digitalWrite(LED_FIX_PIN, LOW);
+  digitalWrite(LED_SPARE_PIN, LOW);
+  digitalWrite(LED_TX_PIN, LOW);
+  // End LED self test
   digitalWrite(RELAY_PIN, LOW);
 }
 
@@ -181,11 +208,13 @@ bool handle_gps() {
         longitude_uDeg = nmea.getLongitude();
         speed_knots = nmea.getSpeed();
         course_degs = nmea.getCourse();
+        digitalWrite(LED_FIX_PIN, HIGH); // Switch on GPS Fix LED
         //altValid = nmea.getAltitude(altitude_m);
 
         return true;
       } else {
         latitude_uDeg = longitude_uDeg = speed_knots = course_degs = -1;
+        digitalWrite(LED_FIX_PIN, LOW); // Switch off GPS Fix LED
         return false;
       }
     }
@@ -421,13 +450,15 @@ void build_info_field(char msg[], int msgLen) {
 }
 
 void tncWrite(byte b) {
-
+  digitalWrite(LED_TX_PIN, HIGH); // Switch on TX LED
   kissSerial.write(b);
   
   #if HEXDEBUG
     Serial.print(b, HEX);
     Serial.print(" ");
   #endif
+  delay(10); // Add a delay so the LED stays on longer, to better cover the transmit time period
+  digitalWrite(LED_TX_PIN, LOW); // Switch off TX LED
 }
 
 void tncSendField(byte field[], int maxlen) {
@@ -436,13 +467,15 @@ void tncSendField(byte field[], int maxlen) {
     if (field[i] == 0){
       break;
     }
-    
+    digitalWrite(LED_TX_PIN, HIGH); // Switch on TX LED
     kissSerial.write(field[i]);
     
     #if HEXDEBUG
       Serial.print(field[i], HEX);
       Serial.print(" ");
     #endif
+    delay(10); // Add a delay so the LED stays on longer, to better cover the transmit time period
+    digitalWrite(LED_TX_PIN, LOW); // Switch off TX LED
   }  
 }
 
@@ -544,4 +577,3 @@ void loop() {
   
   handle_secondly_status();
 }
-
