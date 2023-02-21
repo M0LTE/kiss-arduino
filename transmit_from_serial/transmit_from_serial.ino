@@ -35,6 +35,8 @@ void setup() {
   setViaCall("aaaaah-1", 7, false);
   setViaCall("aaaaai-1", 8, false);
   setViaCall("aaaaaj-1", 9, true);*/
+
+  Serial.println("started");
 }
 
 void setFromCall(char call[], bool direct) {
@@ -214,4 +216,7 @@ void send(char to[], char serialBuffer[], int len){
   put_payload_in_infoField(serialBuffer, len);
   
   sendFrame(); // NB this doesn't block
+
+  Serial.print("sent ");
+  Serial.println(len);
 }

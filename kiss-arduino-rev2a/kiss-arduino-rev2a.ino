@@ -15,8 +15,8 @@
 #define RELAY_PIN 4
 
 // options
-#define AUTO_TX_MIN_INTERVAL_MS 15000L
-#define BEACON_INTERVAL_MS 300000L
+#define AUTO_TX_MIN_INTERVAL_MS 15000UL
+#define BEACON_INTERVAL_MS 60000UL
 #define HEXDEBUG 0
 
 // 1 deg lat is 111000m
@@ -37,8 +37,8 @@
 #define KISS_CMD_DATAFRAME0 0x00
 #define DELIM_1 0x03
 #define DELIM_2 0xF0
-const char FROM_CALL[] = "M0LTE-2";
-const char locationComment[25] = "3T Bus 2";
+const char FROM_CALL[] = "M0LTE-1";
+const char locationComment[25] = "Sweeper";
 
 // See http://www.aprs.org/doc/APRS101.PDF page 104 (Appendix 2: The APRS Symbol Tables)
 // U is bus, > is car
@@ -48,7 +48,6 @@ const char APRS_PRIMARY_SYMBOL = 'U';
 byte addressField[ADDRESS_FIELD_LEN] = { 
   // from m0lte-13 to wide1-1, wide2-1
   0xAE, 0x92, 0x88, 0x8A, 0x62, 0x40, 0x62,  // to WIDE1-1
-  //0x9A, 0x60, 0x98, 0xA8, 0x8A, 0x40, 0x7A,  // from M0LTE-13
   0,0,0,0,0,0,0, 
   0xAE, 0x92, 0x88, 0x8A, 0x64, 0x40, 0x63   // via WIDE2-1 (last)
 };
@@ -141,7 +140,7 @@ void setCallsign(char target[], char callsignAndSsid[], bool isLastCall) {
   else{
     ssid = atoi(ssidArr);
     // convert ssidArr to integer
-    //ssid = ssidStr.toInt();
+    //ssid = ssidStr.toInt(
   }
 
   // at this point, callsign is a six character ASCII string, padded with whitespace if necessary, and ssid is an integer.
@@ -171,20 +170,51 @@ void setCallsign(char target[], char callsignAndSsid[], bool isLastCall) {
   target[6] = ssidByte;
 }
 
+
+long newlat,newlon;
+bool wasValid;
+
 bool handle_gps() {
   // non-blocking
   while (gpsSerial.available()) {
     char c = gpsSerial.read();
     if (nmea.process(c)) {
       if (nmea.isValid()) {
-        latitude_uDeg = nmea.getLatitude();
-        longitude_uDeg = nmea.getLongitude();
-        speed_knots = nmea.getSpeed();
-        course_degs = nmea.getCourse();
-        //altValid = nmea.getAltitude(altitude_m);
+
+        if (!wasValid){
+          Serial.print("got fix  ");
+          Serial.print(latitude_uDeg);
+          Serial.print(" ");
+          Serial.print(longitude_uDeg);
+          Serial.println();
+          wasValid = true;
+        }
+        
+        newlat = nmea.getLatitude();
+        newlon = nmea.getLongitude();
+        if (newlat != latitude_uDeg || newlon != longitude_uDeg){
+          latitude_uDeg = newlat;
+          longitude_uDeg = newlon;
+          speed_knots = nmea.getSpeed();
+          course_degs = nmea.getCourse();
+
+          /*Serial.print("position change ");
+          Serial.print(latitude_uDeg);
+          Serial.print(" ");
+          Serial.print(longitude_uDeg);
+          Serial.print(" *");
+          Serial.println();*/
+        }
 
         return true;
       } else {
+
+        if (wasValid){
+          Serial.println("lost fix");
+          wasValid = false;
+        }
+        
+        Serial.print(".");
         latitude_uDeg = longitude_uDeg = speed_knots = course_degs = -1;
         return false;
       }
@@ -498,11 +528,11 @@ void handle_secondly_status(){
       distFromLast_m = get_dist_from_last_tx_udeg() / 9.0; // 9 udeg = 1m
       distFromThreshold_m = DISTANCE_THRESHOLD_m - distFromLast_m;
       
-      Serial.print("dist from last TX: ");
+      /*Serial.print("dist from last TX: ");
       Serial.print(distFromLast_m); 
       Serial.print("m (");
       Serial.print(distFromThreshold_m);
-      Serial.println("m from threshold)");
+      Serial.println("m from threshold)");*/
     }
     
     nextStatusPrint = millis() + 2000;
@@ -544,4 +574,3 @@ void loop() {
   
   handle_secondly_status();
 }
-
